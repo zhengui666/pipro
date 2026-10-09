@@ -1,6 +1,6 @@
 # pipro 验证与复审材料
 
-2026-10-09 状态：原五项阻断、OAuth scope 响应及追加启动竞争均已通过独立复验，40 项测试与语法检查通过，无剩余源码审查阻断。GitHub 公开上传已获授权；生产部署、真实 pi/模型与 ChatGPT 接入仍未验收，没有登录或建立隧道。
+2026-10-09 状态：服务基线 main `917b4a17` 的原五项阻断、OAuth scope 响应及启动竞争已通过独立复验，原 40 项测试保留。新增 portable 插件包装的本地验证及独立复审均通过，无阻断源码公开更新项。生产部署、真实 pi/模型与 ChatGPT 接入仍未验收，没有登录或建立隧道。
 
 ## 验证证据
 
@@ -8,8 +8,12 @@
 
 | 命令/检查 | 结果 |
 |---|---|
-| `npm run check` | exit 0；8 个源码模块语法检查通过 |
-| `npm test` | exit 0；40 tests / 40 pass / 0 fail / 0 skipped；7395.110248 ms |
+| `npm run check` | exit 0；8 个原源码模块及新增包装脚本语法检查通过 |
+| `npm test` | exit 0；57 tests / 57 pass / 0 fail / 0 skipped；8293.607388 ms；原 40 项与新增 17 项均通过 |
+| skill-creator `quick_validate.py` | setup 与 control-pi 均 exit 0，Skill is valid |
+| `npm run package:plugin -- --target chatgpt …` | exit 0；以测试 raw app ID生成 7 文件 fixture 包，包含 `.app.json`，不含 mcp.json |
+| `npm run package:plugin -- --target desktop …` | exit 0；以测试 HTTPS URL生成 7 文件 fixture 包，包含 mcp.json，不含 `.app.json` |
+| 独立复审回执 | 57/57 与 check 通过，额外 30 项独立负例及双模式实际 CLI 生成通过，无阻断源码公开更新项 |
 | 运行环境 | Manjaro Linux，Node v26.7.0 |
 | npm 依赖安装 | 官方 registry.npmjs.org；固定版本；`--ignore-scripts`；17 个包 |
 | 真实 pi | 未安装；没有安装/登录或调用模型 |
@@ -36,6 +40,10 @@
 
 ## 实现检查入口
 
+新增包装仅涉及 root `plugin.json`、两个 `skills/`、`scripts/build-plugin.mjs`、包装测试及文档/package scripts/.gitignore；`src/` 控制业务和原有测试保持基线。打包器纯离线，在固定白名单和输入验证完成后构造同级临时目录，最后原子 rename。ChatGPT 输出 `.app.json`，desktop 输出带 schema/type 的 `mcp.json`，两者互斥；用户绑定默认整包被 Git 忽略。安装方式与限制见 `docs/PLUGIN_INSTALL.md`。
+
+新增 `test/plugin.test.js` 17 项覆盖：portable 清单/version、两模式结构与引用、排他、raw ID/URL/CLI 参数拒绝、显式 loopback 与 IPv6、固定白名单、稳定字节输出、非空目录保留/空目录原子替换、输出与源符号链接、坏模板/缺文件不产生输出、write/rename 注入失败清理、发布时竞争文件保护、实际 Git 忽略，以及真实 CLI 成功/失败输出。临时 ID和 URL只验证包装格式，不代表存在的连接或已授权账号。
+
 - `src/config.js`：严格配置与命名 workspace realpath 校验；拒绝重叠目录、任意 argv、非回环 host；最小环境。
 - `src/rpc.js`：LF 字节分帧、唯一 request ID、乱序关联、背压、边界、首个失败与超时、退出及进程组清理。
 - `src/tasks.js`：异步任务、持久化 workspace 租约、队列数量/字节限额、run deadline、清理状态与错误、TTL。
@@ -51,7 +59,8 @@
 4. `cleanupStatus:confirmed` 表示官方 clear_queue/abort 及 RPC 进程组关闭成功，不替代 OS 层后代进程验收。`cleanup_unconfirmed` 恒不报告 final，也不自动解锁。
 5. 默认 metadata 不返回正文；redacted_text 无法保证识别任意未知/编码秘密。
 6. 会话/事件只在内存；workspace 租约持久保存。没有分布式、多租户 OS 安全或在线 token 吊销服务。
-7. 独立复审已确认源码可交付。公开 GitHub 内容只包含源码、测试、lockfile、示例和文档；排除 node_modules、运行配置、piHome、会话、测试日志、私有机器路径和秘密。
+7. 服务基线与本轮插件包装均完成独立复审。本次公开范围只包含包装源码、测试与说明；生成的用户绑定包/fixture、node_modules、运行配置、piHome、会话、测试日志、私有机器路径和秘密均不提交到源码仓库。
+8. 本地 marketplace 识别、deep link 安装、web 管理员 GitHub 导入与实际 app/MCP 连接均未执行。生成器成功不等于 ChatGPT 安装成功；根模板不是 skills-only 最终控制器，公开目录提交还需正式 MCP/身份/审核材料。
 
 ## 最小用户配置
 

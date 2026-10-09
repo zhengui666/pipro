@@ -2,7 +2,7 @@
 
 让 ChatGPT 通过 MCP Streamable HTTP 管理目标 Linux 机器上的 pi coding agent。每个任务是独立的 pi RPC 子进程，立即返回明确的 `taskId`；发送消息、取消均异步返回，随后轮询状态、事件和结果。
 
-本项目是可运行的 MCP 服务源码。安装后，在 ChatGPT 注册为自定义 MCP 插件即可使用；不需要网页 UI。它不会自动登录、创建凭据、开公网端口、建立隧道或部署服务。
+本项目包含可运行的 MCP 服务源码、portable 插件模板与两个使用技能。离线打包器可把它们绑定到已有 ChatGPT app 或 desktop MCP 地址；导入对应 marketplace 后从插件页安装。它不会自动登录、创建凭据、开公网端口、建立隧道或部署服务。
 
 ## 支持范围与验证状态
 
@@ -12,6 +12,8 @@
 - fake pi 协议、生命周期、官方 MCP 客户端 HTTP、OAuth JWT 测试已执行。**真实 pi 未实测**：开发机未发现 pi；没有安装/登录 pi 或进行外部付费模型调用。ChatGPT 账户实际连接、真实 IdP 授权流程、生产隔离和部署均未验收。
 
 ## 最小启动步骤
+
+若服务/连接已准备好，可先阅读下一节的插件打包与安装。服务尚未配置时，按这里准备目标机器；插件安装不会代替机器配置或批准 coding agent 执行任务。
 
 在目标机器上准备 Node.js、官方 pi v1.1.0 可执行文件，以及管理员批准的工作目录。pi 安装按[官方说明](https://github.com/earendil-works/pi/tree/v1.1.0/packages/coding-agent)完成。先确认 `pi --version` / `pi --help`，不要把不兼容版本当作通过。
 
@@ -28,6 +30,24 @@ npm start -- /absolute/path/to/pipro/config.json
 可选 `provider`、`model` 仅能在服务端配置，ChatGPT 无法更改。如果需向 pi 传入已有模型环境变量，在 `passEnv` 明确列出变量名，例如 `ANTHROPIC_API_KEY`；配置中不填变量值。默认不继承任何模型密钥、OAuth 请求 token 或全套环境。`PATH` 只用于目标机已有运行时，管理员应确保其可信。`NODE_OPTIONS`、`LD_PRELOAD` 等注入变量不可透传。
 
 默认地址是 `http://127.0.0.1:8787/mcp`，仅本机调试可用。服务始终禁止 `0.0.0.0`、公网 IP 或任意 hostname 绑定，即使开启 OAuth。生产远程入口应由管理员独立管理的 TLS 网关代理到回环服务，或使用支持的私网接入方式。不要把 `auth:none` 的端点代理到公开网络。
+
+## 插件打包与便捷安装
+
+在已有 MCP app/endpoint 的前提下，选择一种模式，运行纯离线生成器：
+
+```sh
+# ChatGPT：PIPRO_APP_ID 为你自己注册连接的原始 ID，不能填 plugin_ 页面 ID。
+npm run package:plugin -- --target chatgpt --app-id "$PIPRO_APP_ID" --out .pipro-plugins-chatgpt
+
+# Desktop：PIPRO_MCP_URL 为已有且获批准的 HTTPS /mcp 地址。
+npm run package:plugin -- --target desktop --mcp-url "$PIPRO_MCP_URL" --out .pipro-plugins-desktop
+```
+
+输出包括 `pipro-local` marketplace、pipro 清单、setup/control-pi 技能、INSTALL.md，以及互斥的 `.app.json` 或 `mcp.json`。输出整包默认被 Git 忽略，不把用户绑定提交到源码仓库。已有非空目录和危险符号链接拒绝；生成器不执行网络、安装、授权或隧道操作。
+
+支持本地 marketplace 的客户端可用现有 Codex CLI 手动导入**生成目录根**，再重启 desktop，从 Plugins Directory 的 `pipro-local` 来源安装。客户端已识别该 marketplace 后，可使用 `codex://plugins/install/pipro?marketplace=pipro-local` 打开安装流程；这个链接不能替代首次导入，也不是 ChatGPT web 的通用安装按钮。
+
+ChatGPT web 工作区导入需要管理员、已授权 GitHub 访问及另行批准的绑定包分发；公开源码根不是可直接安装的最终控制器。完整命令、前提、原始 ID规则与正式提交限制见 [插件安装说明](docs/PLUGIN_INSTALL.md)。不要提交根模板为 skills-only 插件，官方当前不支持发布后补加 MCP。
 
 ## ChatGPT 接入
 
@@ -114,6 +134,8 @@ npm test
 覆盖 JSONL byte LF/CRLF、碎片 UTF-8 与 U+2028/U+2029、乱序响应、`success:false`、畸形/过长/断流/无 ID 响应、启动/退出/超时、快完成竞态、handled/queued、完整取消与失败、进程组清理、workspace 互斥、owner 隔离、事件窗口、输出限制，以及 SDK HTTP 工具 schema/annotations 和 OAuth。
 
 独立复审回归位于 `test/review.test.js`：真实 detached fixture 在 RPC 崩溃后继续写入时，workspace 仍隔离且重启/TTL 不解锁；pi 队列的数量/UTF-8 字节及发送中预留共同限额；缺少快照时保守保留容量；steer/followup 在 settled 竞态中启动新 run；新 run 保留 deadline；取消期间 prompt 超时不伪报 cancelled；原运行错误与后续清理错误分别保留；默认队列限额 8 和限额 1 下，立即发消息均以 TASK_NOT_READY 拒绝，初始 prompt 正常先执行且不误隔离。OAuth 另测试有效 token 缺 scope 返回 403。
+
+`test/plugin.test.js` 新增验证两种包装结构、清单与文件引用、raw ID/URL/参数拒绝、显式 loopback、固定白名单、确定性字节输出、Git 忽略、已有目录/符号链接保护和失败时不留半成品。包装测试不运行真正的插件安装或认证。
 
 本轮执行器的受限 sandbox 内 Node 子进程曾出现 EPERM/提前退出；正常进程环境下本地测试通过。若在受限执行器复验遇到同样现象，应报告具体 spawn/权限失败，遵循平台审批，不绕过拒绝。
 

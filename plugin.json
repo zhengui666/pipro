@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "pipro",
+  "version": "0.1.0",
+  "description": "通过受控 MCP 连接管理 pi coding agent 的异步任务。",
+  "author": { "name": "zhengui666", "url": "https://github.com/zhengui666" },
+  "homepage": "https://github.com/zhengui666/pipro",
+  "repository": "https://github.com/zhengui666/pipro",
+  "keywords": ["pi", "coding-agent", "mcp"],
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/setup/SKILL.md",
+      "interface": {
+        "displayName": "pipro",
+        "shortDescription": "在已批准的 workspace 上操控 pi agent",
+        "longDescription": "创建、继续、观察和取消目标机器上的 pi 编码任务。编码任务可以修改文件、执行命令并消耗已配置的模型额度。",
+        "developerName": "zhengui666",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "websiteURL": "https://github.com/zhengui666/pipro",
+        "defaultPrompt": ["列出 pipro 可用的 workspace。", "继续我指定 taskId 的 pi 任务。"]
+      }
+    }
+  }
+}
