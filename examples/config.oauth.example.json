@@ -1,0 +1,17 @@
+{
+  "host": "127.0.0.1",
+  "port": 8787,
+  "piExecutable": "/opt/pi/bin/pi",
+  "piHome": "/srv/pipro/pi-home",
+  "workspaces": { "demo": "/srv/pipro/workspaces/demo" },
+  "passEnv": [],
+  "outputMode": "metadata",
+  "auth": {
+    "mode": "oauth",
+    "issuer": "https://idp.example.com/",
+    "resource": "https://pipro.example.com/mcp",
+    "jwksFile": "/etc/pipro/idp-public-jwks.json",
+    "allowedSubjects": ["replace-with-your-idp-subject"],
+    "scope": "pi:control"
+  }
+}

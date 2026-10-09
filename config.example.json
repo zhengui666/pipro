@@ -1,0 +1,27 @@
+{
+  "host": "127.0.0.1",
+  "port": 8787,
+  "piExecutable": "/opt/pi/bin/pi",
+  "piHome": "/srv/pipro/pi-home",
+  "workspaces": {
+    "demo": "/srv/pipro/workspaces/demo"
+  },
+  "passEnv": [],
+  "outputMode": "metadata",
+  "limits": {
+    "maxProcesses": 2,
+    "maxTasks": 100,
+    "rpcTimeoutMs": 5000,
+    "taskTimeoutMs": 3600000,
+    "idleTimeoutMs": 900000,
+    "retentionMs": 3600000,
+    "maxRecordBytes": 1048576,
+    "maxEvents": 300,
+    "maxTextChars": 12000,
+    "maxPromptChars": 16000,
+    "maxQueuedCommands": 8,
+    "maxQueuedMessageBytes": 131072,
+    "maxHttpRequests": 32
+  },
+  "auth": { "mode": "none" }
+}

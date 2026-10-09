@@ -1,0 +1,23 @@
+# Operator-reviewed example only; this project never installs/enables it.
+[Unit]
+Description=pipro pi agent MCP control
+After=network.target
+
+[Service]
+Type=simple
+User=pipro
+WorkingDirectory=/opt/pipro
+ExecStart=/usr/bin/node /opt/pipro/src/main.js /etc/pipro/config.json
+Restart=on-failure
+KillMode=control-group
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/pipro/workspaces /srv/pipro/pi-home
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
