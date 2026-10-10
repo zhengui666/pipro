@@ -9,7 +9,7 @@
 - 协议基线：[pi v1.1.0 RPC](https://github.com/earendil-works/pi/blob/v1.1.0/packages/coding-agent/docs/rpc.md)。原 badlogic/pi-mono 已迁移到 earendil-works/pi，当前官方包是 `@earendil-works/pi-coding-agent`。旧 pi 版本可能缺少这些参数或事件，不保证兼容。
 - MCP：官方 [TypeScript SDK v2](https://ts.sdk.modelcontextprotocol.io/v2/)，固定 server/client 2.3.1、node adapter 2.1.1；使用无会话、JSON 响应的 Streamable HTTP。MCP 连接断开不会丢失服务内存中的 pi 任务。
 - 运行环境：Linux、Node.js 22+。本轮实际验证环境为 Manjaro、Node 26.7.0。没有构建步骤。
-- fake pi 协议、生命周期、官方 MCP 客户端 HTTP、OAuth JWT 测试已执行。**真实 pi 未实测**：开发机未发现 pi；没有安装/登录 pi 或进行外部付费模型调用。ChatGPT 账户实际连接、真实 IdP 授权流程、生产隔离和部署均未验收。
+- fake pi 协议、生命周期、官方 MCP 客户端 HTTP、OAuth JWT 测试已执行。官方 pi v1.1.0 已在独立目录安装，并通过无 prompt 的真实 RPC 启动、get_state、取消和 workspace 复用验证；没有登录 pi、传入模型凭据或调用模型。模型编码结果、ChatGPT 实际连接、Cloudflare 边缘授权、生产隔离和部署仍未验收。
 
 ## 最小启动步骤
 
@@ -122,6 +122,32 @@ pi 的官方 bash 工具在 Linux 上会启动 detached 进程，未必属于 RP
 
 没有创建 IdP 客户端、长期密钥或防火墙规则。缺少上述认证/可达性配置时，只能做回环开发验证，不能声称正式远程接入完成。
 
+### Cloudflare Access Managed OAuth
+
+选择 [Cloudflare Access 配置示例](examples/config.cloudflare-access.example.json)中的 `auth.mode:cloudflare-access`。示例里的占位值会被拒绝，不能直接启动；正式值保存在被 Git 忽略的运行配置中。
+
+| 字段 | 必须填写的实际值 |
+|---|---|
+| `issuer` | 团队的 `https://<team>.cloudflareaccess.com` origin，不带末尾 `/`、路径或端口 |
+| `resource` | 该 MCP 的规范 HTTPS `/mcp` URL，无 userinfo/query/fragment |
+| `audience` | 专属 Access 应用的 AUD，64 位小写十六进制；不是 resource URL 或客户端 ID |
+| `allowedEmail` | 已明确批准的唯一用户邮箱，按 JWT 中的值精确匹配 |
+
+此模式不接受 `jwksUrl`、`jwksFile`、`scope`、`allowedSubjects` 或额外字段。ChatGPT 客户端持有的是 Managed OAuth opaque token；Cloudflare 验证后向 origin 注入 `Cf-Access-Jwt-Assertion`。pipro 只校验该断言，`Authorization`、cookie 和明文邮箱 header 均不能代替它。[官方 token 流程](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/)
+
+断言必须是单个、最多 16 KiB 的 compact JWT；重复 header 和逗号拼接拒绝。仅接受 RS256、必需 `kid`，拒绝 token 指定 `jku/x5u/jwk`。校验准确 issuer、应用 AUD、exp/iat、可选 nbf、非空 sub、email 与 `type:app`；时钟容差 5 秒，不套用旧 OAuth 的一小时 token age。组织 token、错误签名/时钟、service identity 均拒绝。任务 owner 仍从 issuer/sub 派生，刷新或 session nonce 改变不影响 owner。
+
+每个服务只创建一个 jose remote JWKS resolver，公钥地址固定为 issuer 的 `/cdn-cgi/access/certs`。获取超时 5 秒、unknown-kid cooldown 30 秒、缓存 10 分钟，按 jose 的公钥轮换规则处理；不跟随重定向，获取失败时拒绝认证。origin 的缺失/无效断言返回 401，有效但被身份策略拒绝返回 403，不返回旧 `pi:control` challenge 或 discovery metadata。八个工具声明 `oauth2` 且 `scopes:[]`；旧 `oauth` 模式保持原契约。Host/Origin 检查继续启用。
+
+正式接入顺序：
+
+1. 为这个 hostname 准备专属 Access 应用和仅允许已批准邮箱的策略；保留其他应用、隧道路由和端口。取真实 AUD，不复制其他应用的 AUD，不添加 service-token/bypass 策略。
+2. 审查并配置该应用的 Managed OAuth。callback allowlist 从实际 ChatGPT 创建表单或客户端 metadata 逐字核对，不猜地址。新 grant/client、登录和凭据仍需用户完成对应授权。
+3. 认证配置及独立复审通过后，再让隧道转发到独立回环端口。Cloudflare edge 负责公共 `/.well-known/` 与认证 challenge；pipro origin 不提供这套 edge discovery，也不能公开 `auth:none` 来代替。
+4. 验证公共未授权请求的 401/discovery、PKCE/客户端注册、本人登录及其他身份拒绝，再在 ChatGPT 创建 OAuth MCP 个人插件，先验收 `list_workspaces`。
+
+本地签名 fixture 只证明 origin 的校验和隔离行为；真实 Cloudflare 边缘、TLS、OAuth grant 与 ChatGPT 连接还须现场验收。[Access application token](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/)、[ChatGPT 认证要求](https://developers.openai.com/plugins/build/auth)
+
 ## 测试
 
 ```sh
@@ -129,7 +155,15 @@ npm run check
 npm test
 ```
 
-测试只启动仓库内的 `test/fake-pi.js`、临时工作目录和回环 HTTP。OAuth 测试密钥仅在内存，磁盘只写临时公钥，测试结束清理。不会运行真实 pi、访问模型或读取用户凭据。
+默认测试启动仓库内的 `test/fake-pi.js`、临时工作目录和回环 HTTP；真实 pi 测试默认跳过。OAuth/Access 签名私钥仅在内存，JWKS 使用临时公共 fixture；Access 测试拦截 fetch，不请求真实 Cloudflare。没有模型调用或用户凭据访问。
+
+已有官方 pi v1.1.0 时，可显式执行真实生命周期回归：
+
+```sh
+PIPRO_REAL_PI=/absolute/path/to/pi npm test
+```
+
+`test/real-pi.test.js` 使用新临时 piHome/workspace 与过滤环境，只做无 prompt 的 get_state、clear_queue/abort、进程退出和 workspace 复用，不启动 MCP HTTP 或调用模型。该检查成功不代表模型任务或生产 OS 隔离已验收。
 
 覆盖 JSONL byte LF/CRLF、碎片 UTF-8 与 U+2028/U+2029、乱序响应、`success:false`、畸形/过长/断流/无 ID 响应、启动/退出/超时、快完成竞态、handled/queued、完整取消与失败、进程组清理、workspace 互斥、owner 隔离、事件窗口、输出限制，以及 SDK HTTP 工具 schema/annotations 和 OAuth。
 
@@ -137,7 +171,7 @@ npm test
 
 `test/plugin.test.js` 新增验证两种包装结构、清单与文件引用、raw ID/URL/参数拒绝、显式 loopback、固定白名单、确定性字节输出、Git 忽略、已有目录/符号链接保护和失败时不留半成品。包装测试不运行真正的插件安装或认证。
 
-本轮执行器的受限 sandbox 内 Node 子进程曾出现 EPERM/提前退出；正常进程环境下本地测试通过。若在受限执行器复验遇到同样现象，应报告具体 spawn/权限失败，遵循平台审批，不绕过拒绝。
+本轮受限执行器里，普通 Node 子进程的 console.log、pi --version 和 RPC 都曾提前 exit 0 且无输出；Python 管道调用及经平台批准的正常进程环境调用成功。没有为此删除 detached 隔离、放宽失败状态或解除原隔离标记。复验遇到执行限制时，应报告具体动作，遵循平台审批，不绕过拒绝。
 
 ## 用户接入前只需决定
 

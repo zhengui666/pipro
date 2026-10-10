@@ -1,0 +1,16 @@
+{
+  "host": "127.0.0.1",
+  "port": 18787,
+  "piExecutable": "/opt/pi/bin/pi",
+  "piHome": "/srv/pipro/pi-home",
+  "workspaces": { "demo": "/srv/pipro/workspaces/demo" },
+  "passEnv": [],
+  "outputMode": "metadata",
+  "auth": {
+    "mode": "cloudflare-access",
+    "issuer": "https://YOUR_TEAM.cloudflareaccess.com",
+    "resource": "https://YOUR_PIPRO_HOST/mcp",
+    "audience": "REPLACE_WITH_REAL_ACCESS_APPLICATION_AUD",
+    "allowedEmail": "REPLACE_WITH_CONFIRMED_EMAIL"
+  }
+}

@@ -89,12 +89,12 @@ export async function startServer(config) {
     const address = http.address();
     const localAuthority = `${config.host === '::1' ? '[::1]' : config.host}:${address.port}`;
     const authorities = new Set([localAuthority, `localhost:${address.port}`]);
-    if (config.auth.mode === 'oauth') authorities.add(new URL(config.auth.resource).host);
+    if (config.auth.mode !== 'none') authorities.add(new URL(config.auth.resource).host);
     const host = req.headers.host;
     if (typeof host !== 'string' || !authorities.has(host)) { json(res, 403, { error: 'invalid_host' }); return; }
     // No browser-origin requests are needed; block cross-origin access and DNS rebinding.
     const origin = req.headers.origin;
-    const expected = config.auth.mode === 'oauth' ? new URL(config.auth.resource).origin : `http://${localAuthority}`;
+    const expected = config.auth.mode !== 'none' ? new URL(config.auth.resource).origin : `http://${localAuthority}`;
     if (origin && origin !== expected) { json(res, 403, { error: 'invalid_origin' }); return; }
     const path = req.url;
     if (auth.metadata && req.method === 'GET' && ['/.well-known/oauth-protected-resource', '/.well-known/oauth-protected-resource/mcp'].includes(path)) {
@@ -109,6 +109,9 @@ export async function startServer(config) {
       try { owner = await auth.authenticate(req); }
       catch (error) {
         const denied = error.status === 403;
+        if (config.auth.mode === 'cloudflare-access') {
+          json(res, denied ? 403 : 401, { error: denied ? 'forbidden' : 'unauthorized' }); return;
+        }
         const code = denied ? 'insufficient_scope' : 'unauthorized';
         const challenge = `Bearer resource_metadata="${auth.metadataUrl}", scope="pi:control"${denied ? ', error="insufficient_scope"' : ''}`;
         json(res, denied ? 403 : 401, { error: code }, { 'WWW-Authenticate': challenge }); return;

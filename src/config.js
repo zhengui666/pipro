@@ -8,6 +8,18 @@ const https = z.string().url().refine(v => {
   const u = new URL(v);
   return u.protocol === 'https:' && !u.username && !u.password && !u.search && !u.hash;
 }, 'HTTPS URL without userinfo/query/fragment required');
+const placeholderHost = host => /(?:^|\.)(?:example\.(?:com|org|net)|invalid|example|test)$/.test(host?.toLowerCase());
+const accessIssuer = https.refine(v => {
+  const u = new URL(v);
+  const team = u.hostname.split('.')[0];
+  return v === u.origin && !u.port
+    && /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/.test(u.hostname)
+    && !['yourteam', 'your-team', 'example', 'replace-me'].includes(team);
+}, 'Cloudflare team HTTPS origin required, without path or placeholder');
+const accessResource = https.refine(v => {
+  const u = new URL(v);
+  return v === u.href && u.pathname === '/mcp' && !placeholderHost(u.hostname);
+}, 'Canonical HTTPS /mcp resource without placeholder required');
 const limits = z.object({
   maxProcesses: z.number().int().min(1).max(16).default(2),
   maxTasks: z.number().int().min(1).max(1000).default(100),
@@ -40,6 +52,12 @@ const schema = z.object({
       mode: z.literal('oauth'), issuer: https, resource: https,
       jwksFile: absolute, allowedSubjects: z.array(z.string().min(1).max(200)).min(1).max(100),
       scope: z.literal('pi:control').default('pi:control')
+    }).strict(),
+    z.object({
+      mode: z.literal('cloudflare-access'), issuer: accessIssuer, resource: accessResource,
+      audience: z.string().length(64).regex(/^[a-f0-9]{64}$/, 'Access application AUD must be 64 lowercase hex characters')
+        .refine(v => !/^([a-f0-9])\1{63}$/.test(v), 'Access AUD placeholder is not allowed'),
+      allowedEmail: z.string().email().max(254).refine(v => !placeholderHost(v.split('@')[1]), 'Confirmed email required')
     }).strict()
   ]).default({ mode: 'none' })
 }).strict();
