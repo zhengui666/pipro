@@ -150,9 +150,9 @@ pi 的官方 bash 工具在 Linux 上会启动 detached 进程，未必属于 RP
 1. 先为专属 hostname 建立已获授权的 Access 应用和仅允许已批准身份的策略，启用该应用的 Managed OAuth。取该应用真实 AUD；不复制其他应用的 AUD、不添加 service-token/bypass 策略，也不预填 callback。
 2. 在 Manjaro 上将 pipro origin 保持在回环地址，并配置只通向该回环端口的专属 Tunnel。不要改动其他应用、隧道路由或端口，也不要把 `auth:none` origin 暴露到公网。
 3. 从公网验证未授权 MCP 请求得到 Cloudflare edge 的 401 与 `WWW-Authenticate` challenge；按 challenge 指向的实际地址读取并核对 OAuth/server discovery 与 resource metadata。确认它们来自预期专属入口后，才开始 ChatGPT 的 **Add custom MCP server** 创建流程。Cloudflare 文档说明 Managed OAuth 会为非浏览器客户端返回指向 discovery 的 401；普通浏览器登录 302、找不到 discovery、404/502 或超时都表示入口配置尚未通过。
-4. 推进到本次连接的管理页，逐字读取其显示的 callback URI。在 Cloudflare Managed OAuth 的 DCR allowlist 中只加入这个准确值，不使用 wildcard。若管理页尚未显示 callback，或者流程要求先配置 callback/注册 OAuth client 才显示它，初始化在此阻塞；停止操作并记录界面限制，不猜 URI，也不声称后续会自动解决。
+4. 推进到本次连接的管理页，逐字读取其显示的 callback URI。若本次连接使用 Cloudflare Managed OAuth 的 DCR 模式，只在 DCR allowlist 中加入这个准确值，不使用 wildcard；其他客户端模式按实际配置检查，不假定会走 DCR。若管理页尚未显示 callback，或者流程要求先配置 callback/注册 OAuth client 才显示它，初始化在此阻塞；停止操作并记录界面限制，不猜 URI，也不声称后续会自动解决。
 5. 仅当 authorization server 完整满足 RFC 9207 issuer identification 时，ChatGPT 才可能使用 stable callback：metadata 声明支持 issuer 参数、metadata `issuer` 与 protected-resource `authorization_servers` 完全相同，并且每个成功及错误授权响应都返回完全匹配的 `iss`。即使满足条件，也以本次管理页显示的确切 URI 为准；不在文档或表单预填 URI。
-6. 保存精确 allowlist 后，继续页面实际选择的客户端注册方式（DCR 时由授权服务器生成并复用 `client_id`），再按当前 UI 创建并安装插件。OpenAI 文档说明 OAuth 用户授权在用户首次调用工具时启动；因此首次只读 `list_workspaces` 可能先触发本人授权，授权完成后仅让该只读调用通过。
+6. 按实际客户端模式继续：OAuth `client_id` 是客户端标识；DCR 时由授权服务器生成并复用，CIMD 时使用客户端 metadata 文档 URL 且没有客户端注册步骤，预定义客户端则使用已有注册值。若选择 DCR，先保存精确 allowlist；然后按当前 UI 创建并安装插件。OpenAI 文档说明 OAuth 用户授权在用户首次调用工具时启动；因此首次只读 `list_workspaces` 可能先触发本人授权，授权完成后仅让该只读调用通过。
 
 错误定位：公网未授权请求的 401 + OAuth challenge 是预期边缘响应，不等于 DCR 或工具调用已通过；302 往往表示 Managed OAuth 未生效或请求没命中专属 Access 应用。403 表示访问策略拒绝当前身份，应核对获批身份策略；origin 报缺失/无效 `Cf-Access-Jwt-Assertion` 的 401 表示边缘没有给 origin 提供有效断言，不能绕过 edge。`invalid_client`、redirect mismatch 或 OAuth 注册失败时，核对当前连接的 callback、allowlist 和本次 DCR 客户端状态，勿扩大为 wildcard。
 

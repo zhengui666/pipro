@@ -8,11 +8,11 @@ pipro 的服务和插件包已有源码实现及 fake pi 测试，真实 pi v1.1
 
 首次接入可不运行 ChatGPT 离线打包器，也不需要先取得原始 app ID。先完成目标机器的 Manjaro 服务部署；若使用 Cloudflare Access Managed OAuth，按[仓库 README 的 Cloudflare 接入步骤](https://github.com/zhengui666/pipro/blob/main/README.md#cloudflare-access-managed-oauth)先配置获批的专属 Access 应用/身份策略与 Managed OAuth，再把专属 Tunnel 指向回环 origin。对公网验证 `/mcp` 的未授权请求返回带 OAuth `WWW-Authenticate` challenge 的 401，并从 challenge 实际指向的位置核对 server/resource 与 authorization-server discovery。
 
-入口验证后，在 ChatGPT web 的 **Plugins → 加号 → Add custom MCP server** 开始创建连接。按页面推进到本次连接的管理页，逐字读取页面实际显示的 callback URI，再把这一个 URI 加到 Cloudflare Managed OAuth 的 DCR allowlist。不要先要求空白表单填写 callback，不预填固定 URI，也不使用 wildcard。保存后按实际 UI 完成客户端注册、创建和安装。
+入口验证后，在 ChatGPT web 的 **Plugins → 加号 → Add custom MCP server** 开始创建连接。按页面推进到本次连接的管理页，逐字读取页面实际显示的 callback URI。若选择 Cloudflare Managed OAuth 的 DCR 模式，只把这个精确值加入 DCR allowlist，不使用 wildcard；其他客户端模式按实际配置处理。不要先要求空白表单填写 callback，也不预填固定 URI。保存后按当前 UI 继续。
 
 若页面尚未显示 callback，却要求先允许 callback 或先完成 DCR/授权/安装才能查看它，初始化在此阻塞：停止并报告 UI 无法提供当前连接的精确 URI，不猜测也不保证后续会自动解决。只有授权服务器完整满足 RFC 9207 issuer identification 时才可能使用 stable callback；即使如此，仍以本次管理页的准确值为准。
 
-OpenAI 文档说明 OAuth 用户授权在用户首次调用工具时启动；因此安装后的首次只读 `list_workspaces` 可能先触发本人授权。只让这次只读调用完成，不自动运行 `create_task`。目前尚未实测 Cloudflare Managed OAuth 与 ChatGPT 的 DCR、OAuth `resource` 绑定或真实 GPT 工具调用；边缘 401/discovery 与本地 fixture 不能代替这些验收。
+OpenAI 文档说明 OAuth 用户授权在用户首次调用工具时启动；因此安装后的首次只读 `list_workspaces` 可能先触发本人授权。只让这次只读调用完成，不自动运行 `create_task`。目前尚未实测 Cloudflare Managed OAuth 与 ChatGPT 的客户端模式、DCR、OAuth `resource` 绑定或真实 GPT 工具调用；边缘 401/discovery 与本地 fixture 不能代替这些验收。
 
 ## 选择并生成包
 
@@ -27,7 +27,7 @@ npm run package:plugin -- --target chatgpt --app-id "$PIPRO_APP_ID" --out .pipro
 
 接受 `asdk_app_`、`connector_`、`templated_apps_` 开头的原始 ID；拒绝 `plugin_` 开头的页面 ID、URL、空值和未知参数。界面 URL 中的 `plugin_asdk_app_...` 是插件页面标识，不要原样填入 `.app.json`。从注册连接的实际 app 信息取得原始 ID并核对对应连接；无法确定时先由管理员确认，不猜 ID或关联其它 app。包声明 `required:true`，安装仍需要用户拥有并连接该 app；它不会自行获得访问权。
 
-原始 app ID 用于 ChatGPT app 绑定；OAuth `client_id` 是由授权服务器按 DCR 创建/复用的 OAuth 客户端身份；Cloudflare Access AUD 是 pipro 校验 `Cf-Access-Jwt-Assertion` 中 `aud` 的专属 Access 应用 audience。三个标识不可互换，也不要猜造或写入公开包。
+原始 app ID 用于 ChatGPT app 绑定；OAuth `client_id` 是 OAuth 客户端标识：DCR 时由授权服务器生成并复用，CIMD 时使用客户端 metadata 文档 URL 且没有客户端注册步骤，预定义客户端使用已有注册值；Cloudflare Access AUD 是 pipro 校验 `Cf-Access-Jwt-Assertion` 中 `aud` 的专属 Access 应用 audience。三个标识不可互换，也不要猜造或写入公开包。
 
 Desktop 模式将**已有且已批准**的 HTTPS MCP 地址写入 portable `mcp.json`，不写 `.app.json`：
 
