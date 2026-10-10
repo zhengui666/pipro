@@ -4,6 +4,12 @@
 
 本项目包含可运行的 MCP 服务源码、portable 插件模板与两个使用技能。离线打包器可把它们绑定到已有 ChatGPT app 或 desktop MCP 地址；导入对应 marketplace 后从插件页安装。它不会自动登录、创建凭据、开公网端口、建立隧道或部署服务。
 
+## 安装按三个阶段完成
+
+1. **源码或插件包准备**：源码用于检查、运行或离线生成绑定包。首次 ChatGPT 接入可以直接从 web 的 Add custom MCP server 流程开始，不要求预先有原始 app ID；已有 ChatGPT app 时，也可沿用下文已有 app ID 的离线打包流程。两种准备方式都不会部署服务或创建连接。
+2. **Manjaro 服务部署**：在目标机器准备 Node.js、pi、隔离配置和已批准的 workspace，运行 pipro 服务。它只监听回环地址；远程访问需单独配置获批的 HTTPS 网关或专属 Tunnel 与访问策略。
+3. **ChatGPT 连接与安装**：先验证远端入口的认证 challenge 和 discovery，再创建 MCP 连接。Cloudflare Access Managed OAuth 的回调只能从本次连接的管理页读取；不能要求空白配置表单预先有 callback。按官方 OAuth 流程，用户授权可能由首次工具调用启动；setup 首次只调用只读 `list_workspaces`，不自动创建 pi 任务。
+
 ## 支持范围与验证状态
 
 - 协议基线：[pi v1.1.0 RPC](https://github.com/earendil-works/pi/blob/v1.1.0/packages/coding-agent/docs/rpc.md)。原 badlogic/pi-mono 已迁移到 earendil-works/pi，当前官方包是 `@earendil-works/pi-coding-agent`。旧 pi 版本可能缺少这些参数或事件，不保证兼容。
@@ -11,9 +17,9 @@
 - 运行环境：Linux、Node.js 22+。本轮实际验证环境为 Manjaro、Node 26.7.0。没有构建步骤。
 - fake pi 协议、生命周期、官方 MCP 客户端 HTTP、OAuth JWT 测试已执行。官方 pi v1.1.0 已在独立目录安装，并通过无 prompt 的真实 RPC 启动、get_state、取消和 workspace 复用验证；没有登录 pi、传入模型凭据或调用模型。模型编码结果、ChatGPT 实际连接、Cloudflare 边缘授权、生产隔离和部署仍未验收。
 
-## 最小启动步骤
+## Manjaro 服务部署（源码运行）
 
-若服务/连接已准备好，可先阅读下一节的插件打包与安装。服务尚未配置时，按这里准备目标机器；插件安装不会代替机器配置或批准 coding agent 执行任务。
+在目标机器准备并本地检查服务；这一步只部署 MCP origin，不代替后续 ChatGPT 连接、授权或插件安装。
 
 在目标机器上准备 Node.js、官方 pi v1.1.0 可执行文件，以及管理员批准的工作目录。pi 安装按[官方说明](https://github.com/earendil-works/pi/tree/v1.1.0/packages/coding-agent)完成。先确认 `pi --version` / `pi --help`，不要把不兼容版本当作通过。
 
@@ -31,9 +37,9 @@ npm start -- /absolute/path/to/pipro/config.json
 
 默认地址是 `http://127.0.0.1:8787/mcp`，仅本机调试可用。服务始终禁止 `0.0.0.0`、公网 IP 或任意 hostname 绑定，即使开启 OAuth。生产远程入口应由管理员独立管理的 TLS 网关代理到回环服务，或使用支持的私网接入方式。不要把 `auth:none` 的端点代理到公开网络。
 
-## 插件打包与便捷安装
+## 源码与插件包准备
 
-在已有 MCP app/endpoint 的前提下，选择一种模式，运行纯离线生成器：
+首次 ChatGPT web 直连不需要离线生成包；若要将已有 ChatGPT app 或 desktop MCP endpoint 绑定进便携包，再选择一种模式运行纯离线生成器：
 
 ```sh
 # ChatGPT：PIPRO_APP_ID 为你自己注册连接的原始 ID，不能填 plugin_ 页面 ID。
@@ -47,23 +53,23 @@ npm run package:plugin -- --target desktop --mcp-url "$PIPRO_MCP_URL" --out .pip
 
 支持本地 marketplace 的客户端可用现有 Codex CLI 手动导入**生成目录根**，再重启 desktop，从 Plugins Directory 的 `pipro-local` 来源安装。客户端已识别该 marketplace 后，可使用 `codex://plugins/install/pipro?marketplace=pipro-local` 打开安装流程；这个链接不能替代首次导入，也不是 ChatGPT web 的通用安装按钮。
 
-ChatGPT web 工作区导入需要管理员、已授权 GitHub 访问及另行批准的绑定包分发；公开源码根不是可直接安装的最终控制器。完整命令、前提、原始 ID规则与正式提交限制见 [插件安装说明](docs/PLUGIN_INSTALL.md)。不要提交根模板为 skills-only 插件，官方当前不支持发布后补加 MCP。
+ChatGPT web 工作区导入需要管理员、已授权 GitHub 访问及另行批准的绑定包分发；公开源码根不是可直接安装的最终控制器。完整命令、前提、原始 ID规则与正式提交限制见[插件安装说明](https://github.com/zhengui666/pipro/blob/main/docs/PLUGIN_INSTALL.md)。不要提交根模板为 skills-only 插件，官方当前不支持发布后补加 MCP。
 
-## ChatGPT 接入
+## ChatGPT 连接与安装
 
-依据 2026-10-09 核对的[官方接入文档](https://developers.openai.com/api/docs/guides/custom-mcp-server)，在 ChatGPT web 的 **Plugins → 加号 → Add custom MCP server** 添加连接。账户/工作区权限可能限制此功能，以当前页面为准。
+依据[官方接入文档](https://developers.openai.com/api/docs/guides/custom-mcp-server)，在 ChatGPT web 的 **Plugins → 加号 → Add custom MCP server** 添加连接。账户/工作区权限可能限制此功能，以当前页面为准。首次直连不要求先提供离线包用的原始 app ID；需要用 `.app.json` 绑定已有 app 时，再使用前一阶段的离线打包命令。
 
-1. 先在目标机器启动 pipro，并完成本地测试。
-2. 选择管理员已批准的可达方式：已部署并认证的 HTTPS 地址（如 `https://pipro.example.com/mcp`），或页面支持的 Tunnel。ChatGPT 云端无法直接访问你机器的 `127.0.0.1`。
-3. HTTPS 方案选择 OAuth，使用已有 IdP 的连接信息。ChatGPT 的 OAuth 客户端注册按该 IdP 支持的静态客户端、CIMD 或 DCR 方式配置；不要假设有可输入自定义固定 API key 的认证选项。
-4. 阅读风险提示，选择 **Create as a plugin**，然后安装该插件。在新对话中通过 `@pipro` 明确指定它。
-5. 刷新工具列表，确认创建/发消息/取消被标为有副作用。先在空测试 workspace 上创建无 prompt 的任务，核对 `idle`，再取消并确认 `cancelled`、`cleanupStatus:confirmed` 和 `processExited:true`。
+1. 先完成目标机器上的服务部署与本地检查；ChatGPT 云端无法直接访问机器的 `127.0.0.1`。
+2. 选择管理员已批准的 TLS 网关或页面支持的 Tunnel。若使用 Cloudflare Access Managed OAuth，按下文顺序先建立并验证专属入口，再在 ChatGPT 创建连接并取得实际 callback。
+3. 按当前管理页显示的连接和认证方式推进 OAuth。ChatGPT 支持配置的 OAuth 客户端注册方式；不要假设有可输入自定义固定 API key 的认证选项。
+4. 按当前页面创建并安装插件。在新对话中通过 `@pipro` 指定它；OAuth 用户授权可能在首次工具调用时启动。
+5. 首次验收只调用 `list_workspaces` 并核对返回的 workspace 名字；若调用启动授权，由用户本人完成授权后让这次只读检查完成。创建、发消息和取消任务属于后续有副作用的操作，必须由用户明确要求；安装或 setup 不自动创建 pi 任务。
 
 [Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels) 可让受支持 OpenAI 产品访问私网 MCP，无需公开入站端口。若选择它，用户需自行审查官方客户端、授权和连接参数；本项目不下载/启动隧道、不保存其访问凭据。不能把本地 mock 测试当作隧道或 ChatGPT 实际接入成功。Tunnel/回环地址也不等于公开插件商店提交条件。
 
-可直接给 ChatGPT 的指令：
+首次连接的只读验收指令：
 
-> 使用 pipro，先列出 workspace，再在 demo 创建任务，prompt 为“检查当前项目的测试并报告问题”。保存 taskId；用 get_status 和 get_events 读取进度，直到 settled/failed/timed_out/cancelled。若出现 cleanup_unconfirmed，报告 error/cleanupError 并停止在该 workspace 创建任务，交由管理员检查。不要把 command receipt 当作模型完成。任何新编码要求都通过这个 taskId 提交。
+> 使用 pipro，只调用 `list_workspaces` 并列出返回的 workspace 名字。不要创建任务、发送消息或取消任务。
 
 ## 工具与异步约定
 
@@ -141,10 +147,16 @@ pi 的官方 bash 工具在 Linux 上会启动 detached 进程，未必属于 RP
 
 正式接入顺序：
 
-1. 为这个 hostname 准备专属 Access 应用和仅允许已批准邮箱的策略；保留其他应用、隧道路由和端口。取真实 AUD，不复制其他应用的 AUD，不添加 service-token/bypass 策略。
-2. 审查并配置该应用的 Managed OAuth。callback allowlist 从实际 ChatGPT 创建表单或客户端 metadata 逐字核对，不猜地址。新 grant/client、登录和凭据仍需用户完成对应授权。
-3. 认证配置及独立复审通过后，再让隧道转发到独立回环端口。Cloudflare edge 负责公共 `/.well-known/` 与认证 challenge；pipro origin 不提供这套 edge discovery，也不能公开 `auth:none` 来代替。
-4. 验证公共未授权请求的 401/discovery、PKCE/客户端注册、本人登录及其他身份拒绝，再在 ChatGPT 创建 OAuth MCP 个人插件，先验收 `list_workspaces`。
+1. 先为专属 hostname 建立已获授权的 Access 应用和仅允许已批准身份的策略，启用该应用的 Managed OAuth。取该应用真实 AUD；不复制其他应用的 AUD、不添加 service-token/bypass 策略，也不预填 callback。
+2. 在 Manjaro 上将 pipro origin 保持在回环地址，并配置只通向该回环端口的专属 Tunnel。不要改动其他应用、隧道路由或端口，也不要把 `auth:none` origin 暴露到公网。
+3. 从公网验证未授权 MCP 请求得到 Cloudflare edge 的 401 与 `WWW-Authenticate` challenge；按 challenge 指向的实际地址读取并核对 OAuth/server discovery 与 resource metadata。确认它们来自预期专属入口后，才开始 ChatGPT 的 **Add custom MCP server** 创建流程。Cloudflare 文档说明 Managed OAuth 会为非浏览器客户端返回指向 discovery 的 401；普通浏览器登录 302、找不到 discovery、404/502 或超时都表示入口配置尚未通过。
+4. 推进到本次连接的管理页，逐字读取其显示的 callback URI。在 Cloudflare Managed OAuth 的 DCR allowlist 中只加入这个准确值，不使用 wildcard。若管理页尚未显示 callback，或者流程要求先配置 callback/注册 OAuth client 才显示它，初始化在此阻塞；停止操作并记录界面限制，不猜 URI，也不声称后续会自动解决。
+5. 仅当 authorization server 完整满足 RFC 9207 issuer identification 时，ChatGPT 才可能使用 stable callback：metadata 声明支持 issuer 参数、metadata `issuer` 与 protected-resource `authorization_servers` 完全相同，并且每个成功及错误授权响应都返回完全匹配的 `iss`。即使满足条件，也以本次管理页显示的确切 URI 为准；不在文档或表单预填 URI。
+6. 保存精确 allowlist 后，继续页面实际选择的客户端注册方式（DCR 时由授权服务器生成并复用 `client_id`），再按当前 UI 创建并安装插件。OpenAI 文档说明 OAuth 用户授权在用户首次调用工具时启动；因此首次只读 `list_workspaces` 可能先触发本人授权，授权完成后仅让该只读调用通过。
+
+错误定位：公网未授权请求的 401 + OAuth challenge 是预期边缘响应，不等于 DCR 或工具调用已通过；302 往往表示 Managed OAuth 未生效或请求没命中专属 Access 应用。403 表示访问策略拒绝当前身份，应核对获批身份策略；origin 报缺失/无效 `Cf-Access-Jwt-Assertion` 的 401 表示边缘没有给 origin 提供有效断言，不能绕过 edge。`invalid_client`、redirect mismatch 或 OAuth 注册失败时，核对当前连接的 callback、allowlist 和本次 DCR 客户端状态，勿扩大为 wildcard。
+
+OpenAI OAuth 文档要求授权服务器正确发布 discovery、支持连接所选的 DCR/CIMD/预定义客户端方式、处理 PKCE，并在授权与 token 请求中传递 `resource` 且将其绑定到签发 token。Cloudflare 文档说明 Managed OAuth 支持 RFC 8707 客户端并由 edge 注入 Access JWT；本项目尚未验证 Cloudflare 对 ChatGPT 的 DCR、`resource` 绑定或真实 GPT 工具调用，因此即使 401/discovery 正常，也不能据此宣称 OAuth 流程完成。若 DCR/resource 校验不通或界面不给 callback，应明确报告初始化阻塞，不保证后续会自动解决。
 
 本地签名 fixture 只证明 origin 的校验和隔离行为；真实 Cloudflare 边缘、TLS、OAuth grant 与 ChatGPT 连接还须现场验收。[Access application token](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/)、[ChatGPT 认证要求](https://developers.openai.com/plugins/build/auth)
 

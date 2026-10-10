@@ -2,13 +2,23 @@
 
 pipro 的服务和插件包已有源码实现及 fake pi 测试，真实 pi v1.1.0 的无 prompt 生命周期也已验证。插件包把两个技能与一个已批准的 MCP 连接配在一起；生成器只写本地目录，不安装插件、不注册 app、不登录、不启动服务或隧道、不部署。**模型任务、ChatGPT 安装/调用、真实 OAuth/Cloudflare Access 边缘和 TLS 网关均未验收。**
 
-源码根部 `plugin.json` 是待绑定模板，不应直接作为 skills-only 最终控制插件安装或提交。先选择下面一种模式，生成带真实连接绑定的包。官方目前不支持给已发布的 skills-only 插件补加 MCP；不要先发布空控制器。
+源码根部 `plugin.json` 是待绑定模板，不应直接作为 skills-only 最终控制插件安装或提交。首次 ChatGPT web 直连可按上面的无 app ID 流程进行；只有需要离线生成便携包时才选择下面的绑定模式。官方目前不支持给已发布的 skills-only 插件补加 MCP；不要先发布空控制器。
+
+## 首次 ChatGPT 连接（还没有原始 app ID）
+
+首次接入可不运行 ChatGPT 离线打包器，也不需要先取得原始 app ID。先完成目标机器的 Manjaro 服务部署；若使用 Cloudflare Access Managed OAuth，按[仓库 README 的 Cloudflare 接入步骤](https://github.com/zhengui666/pipro/blob/main/README.md#cloudflare-access-managed-oauth)先配置获批的专属 Access 应用/身份策略与 Managed OAuth，再把专属 Tunnel 指向回环 origin。对公网验证 `/mcp` 的未授权请求返回带 OAuth `WWW-Authenticate` challenge 的 401，并从 challenge 实际指向的位置核对 server/resource 与 authorization-server discovery。
+
+入口验证后，在 ChatGPT web 的 **Plugins → 加号 → Add custom MCP server** 开始创建连接。按页面推进到本次连接的管理页，逐字读取页面实际显示的 callback URI，再把这一个 URI 加到 Cloudflare Managed OAuth 的 DCR allowlist。不要先要求空白表单填写 callback，不预填固定 URI，也不使用 wildcard。保存后按实际 UI 完成客户端注册、创建和安装。
+
+若页面尚未显示 callback，却要求先允许 callback 或先完成 DCR/授权/安装才能查看它，初始化在此阻塞：停止并报告 UI 无法提供当前连接的精确 URI，不猜测也不保证后续会自动解决。只有授权服务器完整满足 RFC 9207 issuer identification 时才可能使用 stable callback；即使如此，仍以本次管理页的准确值为准。
+
+OpenAI 文档说明 OAuth 用户授权在用户首次调用工具时启动；因此安装后的首次只读 `list_workspaces` 可能先触发本人授权。只让这次只读调用完成，不自动运行 `create_task`。目前尚未实测 Cloudflare Managed OAuth 与 ChatGPT 的 DCR、OAuth `resource` 绑定或真实 GPT 工具调用；边缘 401/discovery 与本地 fixture 不能代替这些验收。
 
 ## 选择并生成包
 
 在 pipro 源码目录运行，Node.js 22+，无新增依赖/网络请求/构建下载。`--out` 必填，可为相对或绝对目录；已有非空目录拒绝，空目录可原子替换。输出祖先或来源文件有符号链接会拒绝。完成前只写同级临时目录，失败清理自身临时目录，不删除用户文件。嵌套输出的父目录可创建；运行时应使用可信父目录，不能把同一 OS 用户恶意并发改路径视为已解决的隔离问题。
 
-ChatGPT 模式需要**已经注册、已获用户批准**的 MCP app 原始 ID。它写 `.app.json`，不写 `mcp.json`：
+已有 ChatGPT app 的离线绑定包需要**已经注册、已获用户批准**的 MCP app 原始 ID。它写 `.app.json`，不写 `mcp.json`；这是与上面的首次 ChatGPT 直连流程不同的打包路径：
 
 ```sh
 # 将 PIPRO_APP_ID 设置成你自己的原始 app ID；这里不提供或创建 ID。
@@ -17,6 +27,8 @@ npm run package:plugin -- --target chatgpt --app-id "$PIPRO_APP_ID" --out .pipro
 
 接受 `asdk_app_`、`connector_`、`templated_apps_` 开头的原始 ID；拒绝 `plugin_` 开头的页面 ID、URL、空值和未知参数。界面 URL 中的 `plugin_asdk_app_...` 是插件页面标识，不要原样填入 `.app.json`。从注册连接的实际 app 信息取得原始 ID并核对对应连接；无法确定时先由管理员确认，不猜 ID或关联其它 app。包声明 `required:true`，安装仍需要用户拥有并连接该 app；它不会自行获得访问权。
 
+原始 app ID 用于 ChatGPT app 绑定；OAuth `client_id` 是由授权服务器按 DCR 创建/复用的 OAuth 客户端身份；Cloudflare Access AUD 是 pipro 校验 `Cf-Access-Jwt-Assertion` 中 `aud` 的专属 Access 应用 audience。三个标识不可互换，也不要猜造或写入公开包。
+
 Desktop 模式将**已有且已批准**的 HTTPS MCP 地址写入 portable `mcp.json`，不写 `.app.json`：
 
 ```sh
@@ -24,7 +36,7 @@ Desktop 模式将**已有且已批准**的 HTTPS MCP 地址写入 portable `mcp.
 npm run package:plugin -- --target desktop --mcp-url "$PIPRO_MCP_URL" --out .pipro-plugins-desktop
 ```
 
-URL 禁止用户名/密码、query、fragment 和非 `/mcp` 路径。包不含 Authorization headers 或 token；OAuth 仍由现有 IdP 和安装客户端完成。后台 pipro 服务保持回环监听；已批准网关如何连接它按服务 README 配置，打包器不改变监听权限。
+URL 禁止用户名/密码、query、fragment 和非 `/mcp` 路径。包不含 Authorization headers 或 token；OAuth 仍由现有 IdP 和安装客户端完成。后台 pipro 服务保持回环监听；已批准网关如何连接它见[仓库 README](https://github.com/zhengui666/pipro/blob/main/README.md)，打包器不改变监听权限。
 
 仅同一机器的 desktop 开发可显式放宽 HTTP：
 
@@ -89,17 +101,18 @@ web 的 GitHub marketplace 导入需工作区管理员，以及可读取包所�
 
 ## 首次使用与验收
 
-安装后的 setup 首先只读 `list_workspaces`，展示可用名字并说明副作用。安装和 setup 不自动创建测试任务、授权编码、发送 prompt 或取消别人任务。用户明确要求任务后，control-pi 才调用现有八个工具；保留 taskId、处理 `TASK_NOT_READY`，区分服务回执和 `agent_settled`。
+安装后的 setup 首先且仅调用只读 `list_workspaces`，展示可用名字并说明副作用。安装和 setup 不自动创建测试任务、授权编码、发送 prompt 或取消别人任务。用户明确要求任务后，control-pi 才调用现有八个工具；保留 taskId、处理 `TASK_NOT_READY`，区分服务回执和 `agent_settled`。
 
 `cleanup_unconfirmed` 需管理员检查旧进程/写入；不能因 `processExited:true` 创建新任务复用目录。`textWithheld:true` 表示正文未返回，不能编造结果。workspace 映射不是 OS sandbox。
 
-安装包生成/结构测试与真实接入是不同验收项。用户可在批准的测试环境先验收只读 workspace，再按自己的明确任务授权验收创建、轮询与取消。源码测试结果不证明实际 ChatGPT 能发现/安装该包或真实 pi/模型已工作。
+安装包生成/结构测试与真实接入是不同验收项。首次 ChatGPT 验收只检查 `list_workspaces`；创建、轮询与取消须在用户明确任务授权后另行验收。源码测试结果不证明实际 ChatGPT 能发现/安装该包或真实 pi/模型已工作。
 
 公开插件目录提交需要另行准备已验证的 HTTPS MCP、开发者身份/审核材料和官方审查。当前 `.app.json` 本地引用包不支持提交到公开目录；有 MCP 的正式提交初始包必须包含 `mcp.json`，不能提交根模板或回环开发包冒充正式可用插件。
 
 ## 官方依据
 
 - [插件打包、portable 清单、onboarding、marketplace 与 MCP](https://developers.openai.com/plugins/build/plugins)
+- [ChatGPT 自定义 MCP 连接](https://developers.openai.com/api/docs/guides/custom-mcp-server)、[OAuth / DCR / resource / callback 要求](https://developers.openai.com/plugins/build/auth)、[Cloudflare Access Managed OAuth](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/managed-oauth/)
 - [工作区 GitHub marketplace 导入](https://learn.chatgpt.com/docs/enterprise/plugin-management)
 - [已知 marketplace 的 desktop deep links](https://learn.chatgpt.com/docs/reference/commands)
 - [公开提交限制与审核流程](https://developers.openai.com/plugins/deploy/submission)
